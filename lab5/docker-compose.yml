@@ -1,0 +1,95 @@
+services:
+  postgres:
+    image: postgres:17
+    container_name: loyalty-postgres
+    environment:
+      POSTGRES_DB: loyalty
+      POSTGRES_USER: loyalty
+      POSTGRES_PASSWORD: loyalty_pass
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U loyalty -d loyalty"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+
+  rabbitmq:
+    image: rabbitmq:4-management
+    container_name: loyalty-rabbitmq
+    environment:
+      RABBITMQ_DEFAULT_USER: loyalty
+      RABBITMQ_DEFAULT_PASS: loyalty_pass
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    volumes:
+      - rabbitmq_data:/var/lib/rabbitmq
+    healthcheck:
+      test: ["CMD-SHELL", "rabbitmq-diagnostics -q check_running && rabbitmq-diagnostics -q check_port_listener 5672"]
+      interval: 10s
+      timeout: 10s
+      retries: 10
+    restart: unless-stopped
+
+  worker:
+    build: ./worker
+    container_name: loyalty-worker
+    environment:
+      DATABASE_URL: postgresql+asyncpg://loyalty:loyalty_pass@postgres:5432/loyalty
+      RABBITMQ_URL: amqp://loyalty:loyalty_pass@rabbitmq/
+    depends_on:
+      postgres:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+    restart: unless-stopped
+
+  api:
+    build: ./api
+    container_name: loyalty-api
+    environment:
+      DATABASE_URL: postgresql+asyncpg://loyalty:loyalty_pass@postgres:5432/loyalty
+      RABBITMQ_URL: amqp://loyalty:loyalty_pass@rabbitmq/
+    ports:
+      - "8000:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+      worker:
+        condition: service_started
+    restart: unless-stopped
+
+  notifier:
+    build: ./notifier
+    container_name: loyalty-notifier
+    environment:
+      RABBITMQ_URL: amqp://loyalty:loyalty_pass@rabbitmq/
+      MIN_DELAY_MS: 200
+      MAX_DELAY_MS: 1500
+      UNSUBSCRIBED: ""
+    ports:
+      - "8001:8001"
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+    restart: unless-stopped
+
+  analytics:
+    build: ./analytics
+    container_name: loyalty-analytics
+    environment:
+      RABBITMQ_URL: amqp://loyalty:loyalty_pass@rabbitmq/
+    ports:
+      - "8002:8002"
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
+  rabbitmq_data:
