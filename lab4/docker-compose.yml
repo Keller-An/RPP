@@ -1,0 +1,58 @@
+x-base: &base
+  build: .
+  image: lab4
+
+x-health: &health
+  test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+  interval: 2s
+  retries: 30
+
+services:
+  db:
+    image: postgres:16
+    environment:
+      POSTGRES_PASSWORD: postgres
+    volumes:
+      - ./schema.sql:/docker-entrypoint-initdb.d/schema.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -h 127.0.0.1"]
+      interval: 2s
+      retries: 30
+
+  seed:
+    <<: *base
+    command: python seed.py
+    environment:
+      DB_URL: postgresql+psycopg://postgres:postgres@db:5432/postgres
+    depends_on:
+      db: {condition: service_healthy}
+
+  p1:
+    <<: *base
+    environment: {APP: provider, PROVIDER_NAME: p1, DELAY_MS: 300, ERROR_PCT: 5, SLOW_PCT: 0}
+    healthcheck: *health
+  p2:
+    <<: *base
+    environment: {APP: provider, PROVIDER_NAME: p2, DELAY_MS: 500, ERROR_PCT: 5, SLOW_PCT: 0}
+    healthcheck: *health
+  p3:
+    <<: *base
+    environment: {APP: provider, PROVIDER_NAME: p3, DELAY_MS: 800, ERROR_PCT: 5, SLOW_PCT: 10}
+    healthcheck: *health
+
+  search:
+    <<: *base
+    ports: ["8000:8000"]
+    cap_add: [SYS_PTRACE]
+    environment:
+      # Вот сюда мы добавили новый вариант!
+      APP: ${VERSION:-app_sync}    # app_sync | app_blocking | app_async | app_async_thread
+      PROVIDERS: p1,p2,p3
+      DB_URL: postgresql+psycopg://postgres:postgres@db:5432/postgres
+    healthcheck: *health
+    depends_on:
+      db: {condition: service_healthy}
+      seed: {condition: service_completed_successfully}
+      p1: {condition: service_healthy}
+      p2: {condition: service_healthy}
+      p3: {condition: service_healthy}

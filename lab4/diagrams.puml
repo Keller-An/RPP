@@ -1,0 +1,98 @@
+
+@startuml seq_sequential
+title Опрос поставщиков по очереди
+
+actor Клиент
+participant "Сервис поиска" as S
+database "БД" as DB
+
+participant "Поставщик 1" as P1
+participant "Поставщик 2" as P2
+participant "Поставщик 3" as P3
+
+Клиент -> S : GET /search?origin&destination&date
+
+S -> DB : SELECT рейсы за дату
+DB --> S : рейсы
+
+S -> P1 : GET /flights?date=...
+P1 --> S : рейсы или ошибка 500
+
+opt Ошибка 500
+    S -> S : ожидание 200 мс
+    S -> P1 : Повторный GET /flights
+    P1 --> S : рейсы или ошибка
+end
+
+S -> P2 : GET /flights?date=...
+P2 --> S : рейсы или ошибка 500
+
+opt Ошибка 500
+    S -> S : ожидание 200 мс
+    S -> P2 : Повторный GET /flights
+    P2 --> S : рейсы или ошибка
+end
+
+S -> P3 : GET /flights?date=...
+P3 --> S : рейсы или ошибка 500
+
+opt Ошибка 500
+    S -> S : ожидание 200 мс
+    S -> P3 : Повторный GET /flights
+    P3 --> S : рейсы или ошибка
+end
+
+S -> S : Составить маршруты
+S --> Клиент : Маршруты, не ответившие поставщики, время
+
+@enduml
+
+
+@startuml seq_parallel
+title Одновременный опрос поставщиков
+
+actor Клиент
+participant "Сервис поиска" as S
+database "БД" as DB
+participant "Поставщик 1" as P1
+participant "Поставщик 2" as P2
+participant "Поставщик 3" as P3
+
+Клиент -> S : GET /search?origin&destination&date
+
+par Одновременное выполнение
+    S -> DB : SELECT рейсы за дату
+    DB --> S : рейсы
+else
+    S -> P1 : GET /flights?date=...
+    P1 --> S : рейсы или ошибка 500
+
+    opt Ошибка 500
+        S -> S : ожидание 200 мс
+        S -> P1 : Повторный GET /flights
+        P1 --> S : рейсы или ошибка
+    end
+else
+    S -> P2 : GET /flights?date=...
+    P2 --> S : рейсы или ошибка 500
+
+    opt Ошибка 500
+        S -> S : ожидание 200 мс
+        S -> P2 : Повторный GET /flights
+        P2 --> S : рейсы или ошибка
+    end
+else
+    S -> P3 : GET /flights?date=...
+    P3 --> S : рейсы или ошибка 500
+
+    opt Ошибка 500
+        S -> S : ожидание 200 мс
+        S -> P3 : Повторный GET /flights
+        P3 --> S : рейсы или ошибка
+    end
+end
+
+S -> S : Составить маршруты
+S --> Клиент : Маршруты, не ответившие поставщики, время
+
+@enduml
